@@ -31,6 +31,9 @@ export class AlwatrNanoServer {
     if (config.autoListen) this.listen();
   }
 
+  /**
+   * Aliase for httpServer.listen(config.port, config.host);
+   */
   listen(): void {
     this._logger.logMethod('listen');
     this._server.listen(this._config.port, this._config.host, () => {
@@ -38,21 +41,27 @@ export class AlwatrNanoServer {
     });
   }
 
+  /**
+   * Aliase for httpServer.close();
+   */
   close(): void {
     this._logger.logMethod('close');
     this._server.close();
   }
 
+  /**
+   * Creating a route to receive requests on the server
+   */
   route(
       method: Methods,
       route: 'all' | `/${string}`,
-      middleware: (connection: AlwatrConnection) => void,
+      routeCallback: (connection: AlwatrConnection) => void,
   ): void {
     this._logger.logMethodArgs('route', {method, route});
 
-    if (this.middlewareList[method] == null) this.middlewareList[method] = {};
+    if (this.CallbackList[method] == null) this.CallbackList[method] = {};
 
-    if (typeof this.middlewareList[method][route] === 'function') {
+    if (typeof this.CallbackList[method][route] === 'function') {
       this._logger.accident('route', 'route_already_exists', 'Route already exists', {
         method,
         route,
@@ -60,7 +69,7 @@ export class AlwatrNanoServer {
       throw new Error('route_already_exists');
     }
 
-    this.middlewareList[method][route] = middleware;
+    this.CallbackList[method][route] = routeCallback;
   }
 
   protected _errorListener(err: NodeJS.ErrnoException): void {
@@ -107,9 +116,11 @@ export class AlwatrNanoServer {
   }
 
   // prettier-ignore
-  protected middlewareList: Record<string, Record<string, (connection: AlwatrConnection) => void | Promise<void>>> = {
-    all: {},
-  };
+  protected CallbackList: Record<string, Record<string,
+    (connection: AlwatrConnection) => void | Promise<void>>
+  > = {
+      all: {},
+    };
 
   protected async _requestListener(
       incomingMessage: IncomingMessage,
@@ -141,10 +152,10 @@ export class AlwatrNanoServer {
     // TODO: handled open remained connections.
 
     const middleware =
-      this.middlewareList[connection.method]?.[route] ||
-      this.middlewareList.all[route] ||
-      this.middlewareList[connection.method]?.all ||
-      this.middlewareList.all.all;
+      this.CallbackList[connection.method]?.[route] ||
+      this.CallbackList.all[route] ||
+      this.CallbackList[connection.method]?.all ||
+      this.CallbackList.all.all;
 
     try {
       if (typeof middleware === 'function') {
@@ -181,17 +192,29 @@ export class AlwatrNanoServer {
 export class AlwatrConnection {
   static versionPattern = new RegExp('^/v[0-9]+');
 
+  /**
+   * Parsed web api Url object
+   */
   readonly url = new URL(
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     this.incomingMessage.url!.replace(AlwatrConnection.versionPattern, ''),
     'http://localhost/',
   );
 
+  /**
+   * Parsed request method object
+   */
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   readonly method = this.incomingMessage.method!.toUpperCase() as Methods;
 
+  /**
+   * extracted auth token from header connection
+   */
   readonly token = this._getToken();
 
+  /**
+   * request body
+   */
   readonly bodyPromise = this._getRequestBody();
 
   protected _logger = createLogger(`alwatr-nano-server-connection`);
@@ -275,6 +298,10 @@ export class AlwatrConnection {
     return body;
   }
 
+  /**
+   * Checking the connection body
+   * @returns json or null
+   */
   async requireJsonBody<Type extends Record<string, unknown>>(): Promise<Type | void> {
     // if request content type is json, parse the body
     const body = await this.bodyPromise;
